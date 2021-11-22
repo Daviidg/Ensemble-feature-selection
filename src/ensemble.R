@@ -39,7 +39,7 @@ compute_rankings <- function(df) {
   list(rba, su)
 }
 
-compute_aggregation <- function(ranks, aggregator) {
+compute_aggregation <- function(ranks, test_df, train_df, aggregator) {
   # Rank aggregation
   global_rank <- aggregator(ranks)
 
@@ -51,10 +51,10 @@ compute_aggregation <- function(ranks, aggregator) {
   train_df_red <- train_df[, c(selected, "C")]
 
   # Train model with reduced dataset and test it
-  model <- naiveBayes(C ~ ., data = train_df_red)
+  model <- caret::naiveBayes(C ~ ., data = train_df_red)
   y_pred <- predict(model, newdata = test_df)
 
-  conf_mat <- confusionMatrix(table(y_pred, test_df$C))
+  conf_mat <- caret::confusionMatrix(table(y_pred, test_df$C))
 
   c(conf_mat$overall, conf_mat$byClass) %>%
     t() %>%
@@ -72,7 +72,7 @@ res <- folds %>%
     funcs %>%
       imap(function(aggregator, name) {
         print(c(fold_name, name))
-        compute_aggregation(ranks, aggregator) %>%
+        compute_aggregation(ranks, test_df, train_df, aggregator) %>%
           add_column(
             method = name,
             fold = fold_name
