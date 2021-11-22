@@ -5,50 +5,47 @@ library(tidyverse)
 library(e1071)
 
 file <- "../datasets/low_dim/sonar.txt"
-df <- read.table(file, header = FALSE, sep = ",")
+df <- read.table(file, header = FALSE, sep = ",") %>%
+  rename(C = last_col()) %>%
+  mutate(C = as_factor(C))
 
-names <- c(1:(ncol(df) - 1))
-names(df) <- c(paste("Var", names, sep = "_"), "C")
+summary(df)
 
 set.seed(12456)
 k <- 10
 
-folds <- createFolds(df[, ncol(df)], k = k, list = TRUE)
-
-accuracies <- list()
-subset_size <- list()
+folds <- df %>%
+  pull(C) %>%
+  createFolds(k = k, list = TRUE)
 
 summary(df)
 
+method_names <- c("RRA", "geom.mean", "mean", "median", "min", "stuart")
+funcs <- method_names %>%
+  map(~ function(ranks) {
+    aggregateRanks(ranks, method = .)
+  }) %>%
+  set_names(method_names)
+
 compute_rankings <- function(df) {
   rba <- relief(C ~ ., df, neighbours.count = 5, sample.size = 10) %>%
-    arrange(-attr_importance) %>%
+    arrange(desc(attr_importance)) %>%
     rownames()
 
   su <- symmetrical.uncertainty(C ~ ., df) %>%
-    arrange(-attr_importance) %>%
+    arrange(desc(attr_importance)) %>%
     rownames()
 
   list(rba, su)
 }
 
-model <- naiveBayes(C ~ ., data = df)
-predict(model, newdata = train, type = "class")
-
-for (i in c(1:k)) {
-  test_index <- folds[[i]]
-  test_df <- df[test_index, ]
-  train_df <- df[-test_index, ]
-
-  # Compute ranks for all different filters
-  ranks <- compute_rankings(train_df)
-
+compute_aggregation <- function(ranks, aggregator) {
   # Rank aggregation
-  global_rank <- aggregateRanks(ranks, method = "mean")
+  global_rank <- aggregator(ranks)
 
-  # Threshhold selection
-  threshhold <- 0.5
-  cutoff <- floor(ncol(df) * threshhold)
+  # Threshold selection
+  threshold <- 0.5
+  cutoff <- floor(ncol(df) * threshold)
   selected <- global_rank[1:cutoff, 1]
 
   train_df_red <- train_df[, c(selected, "C")]
@@ -57,11 +54,33 @@ for (i in c(1:k)) {
   model <- naiveBayes(C ~ ., data = train_df_red)
   y_pred <- predict(model, newdata = test_df)
 
-  acc <- confusionMatrix(table(y_pred, test_df$C))$overall["Accuracy"]
-  accuracies <- c(accuracies, acc)
-  subset_size <- c(subset_size, length(selected))
+  conf_mat <- confusionMatrix(table(y_pred, test_df$C))
+
+  c(conf_mat$overall, conf_mat$byClass) %>%
+    t() %>%
+    as_tibble()
 }
 
-accuracies
+res <- folds %>%
+  imap(function(fold, fold_name) {
+    test_df <- df %>% slice(fold)
+    train_df <- df %>% slice(-fold)
 
-subset_size
+    # Compute ranks for all different filters
+    ranks <- compute_rankings(train_df)
+
+    funcs %>%
+      imap(function(aggregator, name) {
+        print(c(fold_name, name))
+        compute_aggregation(ranks, aggregator) %>%
+          add_column(
+            method = name,
+            fold = fold_name
+          )
+      }) %>%
+      reduce(~ bind_rows(.x, .y))
+  }) %>%
+  reduce(~ bind_rows(.x, .y))
+
+res %>%
+  write_rds("resultat.rds")
