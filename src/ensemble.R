@@ -3,6 +3,7 @@ library(FSelector)
 library(caret)
 library(tidyverse)
 library(e1071)
+library(RankAggreg)
 
 file <- "../datasets/low_dim/sonar.txt"
 df <- read.table(file, header = FALSE, sep = ",") %>%
@@ -26,6 +27,17 @@ funcs <- method_names %>%
     aggregateRanks(ranks, method = .)
   }) %>%
   set_names(method_names)
+
+method_names <- c("CA", "GA")
+funcs_fml <- method_names %>%
+  map(~ function(ranks) {
+    do.call("cbind", ranks) %>%
+      t() %>%
+      RankAggreg(ncol(ranks), method = .)
+  }) %>%
+  set_names(method_names)
+
+c(funcs, funcs_fml)
 
 compute_rankings <- function(df) {
   rba <- relief(C ~ ., df, neighbours.count = 5, sample.size = 10) %>%
