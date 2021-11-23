@@ -4,8 +4,10 @@ library(caret)
 library(tidyverse)
 library(e1071)
 library(furrr)
+library(R.utils)
 
 plan(multisession)
+timeout <- 60
 
 file <- "../datasets/low_dim/sonar.txt"
 df <- read.table(file, header = FALSE, sep = ",") %>%
@@ -63,6 +65,15 @@ compute_aggregation <- function(ranks, test_df, train_df, aggregator,
     as_tibble()
 }
 
+# If it is a dataframe, add the columns, otherwise create new tibble
+add_column_or_new <- function(.data, ...) {
+  if (is.data.frame(.data)) {
+    tibble::add_column(.data, ...)
+  } else {
+    tibble::tibble(...)
+  }
+}
+
 res <- folds %>%
   future_imap(function(fold, fold_name) {
     test_df <- df %>% slice(fold)
@@ -73,15 +84,20 @@ res <- folds %>%
 
     funcs %>%
       imap(function(aggregator, name) {
-        compute_aggregation(ranks, test_df, train_df, aggregator) %>%
-          add_column(
+        withTimeout({
+            compute_aggregation(ranks, test_df, train_df, aggregator)
+          },
+          timeout = timeout,
+          onTimeout = "warning"
+        ) %>%
+          add_column_or_new(
             method = name,
             fold = fold_name
           )
       }) %>%
-      reduce(~ bind_rows(.x, .y))
+      bind_rows()
   }, .options = furrr_options(seed = 123)) %>%
-  reduce(~ bind_rows(.x, .y))
+  bind_rows()
 
 res %>%
   write_rds("resultat.rds")
