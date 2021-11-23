@@ -7,6 +7,7 @@ library(furrr)
 library(R.utils)
 library(R.matlab)
 library(magrittr)
+library(praznik)
 
 plan(multisession)
 timeout <- 60
@@ -42,7 +43,22 @@ compute_rankings <- function(df) {
     arrange(desc(attr_importance)) %>%
     rownames()
 
-  list(rba, su)
+  jmim <- df %>%
+    select(-C) %>%
+    praznik::JMIM(df$C, k = ncol(df) - 1) %>%
+    as.data.frame() %>%
+    arrange(desc(score)) %>%
+    rownames()
+
+  mrmr <- df %>%
+    select(-C) %>%
+    praznik::MRMR(df$C, positive = TRUE) %>%
+    as.data.frame() %>%
+    arrange(desc(score)) %>%
+    rownames()
+
+  # list(rba, su, jmim, mrmr)
+  list(su, jmim, mrmr)
 }
 
 compute_aggregation <- function(ranks, test_df, train_df, aggregator,
@@ -83,7 +99,7 @@ add_column_or_new <- function(.data, ...) {
   }
 }
 
-process_df <- function(file, k = 10, timeout = 60, seed = 1234,
+process_df <- function(file, funcs, k = 10, timeout = 60, seed = 1234,
                        threshold = 1:10 / 10) {
   df <- read_df(file)
 
