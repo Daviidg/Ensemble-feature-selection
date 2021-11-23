@@ -5,21 +5,26 @@ library(tidyverse)
 library(e1071)
 library(furrr)
 library(R.utils)
+library(R.matlab)
+library(magrittr)
 
 plan(multisession)
 timeout <- 60
 
-file <- "../datasets/low_dim/sonar.txt"
-df <- read.table(file, header = FALSE, sep = ",") %>%
-  rename(C = last_col()) %>%
-  mutate(C = as_factor(C))
-
-set.seed(12456)
-k <- 10
-
-folds <- df %>%
-  pull(C) %>%
-  createFolds(k = k, list = TRUE)
+read_df <- function(file) {
+  if (endsWith(file, ".txt")) {
+    read_csv(file, col_names = FALSE) %>%
+      rename(C = last_col()) %>%
+      mutate(C = as_factor(C))
+  } else {
+    with(
+      readMat(file),
+      X %>%
+        as_tibble() %>%
+        add_column(C = as_factor(Y))
+    )
+  }
+}
 
 method_names <- c("RRA", "geom.mean", "mean", "median", "min", "stuart")
 funcs <- method_names %>%
@@ -74,30 +79,54 @@ add_column_or_new <- function(.data, ...) {
   }
 }
 
-res <- folds %>%
-  future_imap(function(fold, fold_name) {
-    test_df <- df %>% slice(fold)
-    train_df <- df %>% slice(-fold)
+process_df <- function(file, k = 10, timeout = 60, seed = 1234) {
+  df <- read_df(file)
 
-    # Compute ranks for all different filters
-    ranks <- compute_rankings(train_df)
+  print(glue::glue("Processing: '{file}'..."))
 
-    funcs %>%
-      imap(function(aggregator, name) {
-        withTimeout({
-            compute_aggregation(ranks, test_df, train_df, aggregator)
-          },
-          timeout = timeout,
-          onTimeout = "warning"
-        ) %>%
-          add_column_or_new(
-            method = name,
-            fold = fold_name
-          )
-      }) %>%
-      bind_rows()
-  }, .options = furrr_options(seed = 123)) %>%
-  bind_rows()
+  df %>%
+    pull(C) %>%
+    createFolds(k = k, list = TRUE) %>%
+    future_imap(function(fold, fold_name) {
+      test_df <- df %>%
+        dplyr::slice(fold)
+      train_df <- df %>%
+        dplyr::slice(-fold)
+
+      # Compute ranks for all different filters
+      ranks <- compute_rankings(train_df)
+
+      funcs %>%
+        imap(function(aggregator, name) {
+          withTimeout({
+              compute_aggregation(ranks, test_df, train_df, aggregator)
+            },
+            timeout = timeout,
+            onTimeout = "warning"
+          ) %>%
+            add_column_or_new(
+              method = name,
+              fold = fold_name
+            )
+        }) %>%
+        bind_rows()
+    }, .options = furrr_options(seed = seed)) %>%
+    bind_rows() %>%
+    add_column(dataset = file)
+}
+
+k <- 10
+dataset_folder <- "../datasets"
+seed <- 123456
+set.seed(seed)
+
+res <- dataset_folder %>%
+  list.files(full.names = TRUE, recursive = TRUE) %T>%
+  print() %>%
+  future_map(
+    ~ process_df(., k = k, timeout = timeout, seed = seed),
+    .options = furrr_options(seed = seed)
+  )
 
 res %>%
   write_rds("resultat.rds")
