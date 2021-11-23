@@ -39,16 +39,19 @@ compute_rankings <- function(df) {
   list(rba, su)
 }
 
-compute_aggregation <- function(ranks, test_df, train_df, aggregator) {
+compute_aggregation <- function(ranks, test_df, train_df, aggregator,
+                                threshold = 0.5) {
+
   # Rank aggregation
   global_rank <- aggregator(ranks)
 
   # Threshold selection
-  threshold <- 0.5
-  cutoff <- floor(ncol(df) * threshold)
-  selected <- global_rank[1:cutoff, 1]
+  selected <- global_rank %>%
+    slice_head(prop = threshold) %>%
+    pull(Name)
 
-  train_df_red <- train_df[, c(selected, "C")]
+  train_df_red <- train_df %>%
+    select(all_of(selected), "C")
 
   # Train model with reduced dataset and test it
   model <- caret::naiveBayes(C ~ ., data = train_df_red)
