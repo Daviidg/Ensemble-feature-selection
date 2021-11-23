@@ -4,13 +4,11 @@ library(caret)
 library(tidyverse)
 library(e1071)
 library(furrr)
-library(R.utils)
 library(R.matlab)
 library(magrittr)
 library(praznik)
 
 plan(multisession)
-timeout <- 60
 
 read_df <- function(file) {
   if (endsWith(file, ".txt")) {
@@ -35,9 +33,13 @@ funcs <- method_names %>%
   set_names(method_names)
 
 compute_rankings <- function(df) {
-  rba <- relief(C ~ ., df, neighbours.count = 5, sample.size = 10) %>%
-    arrange(desc(attr_importance)) %>%
-    rownames()
+  rba <- if (ncol(df) < 100) {
+    relief(C ~ ., df, neighbours.count = 5, sample.size = 10) %>%
+      arrange(desc(attr_importance)) %>%
+      rownames()
+  } else {
+    NULL
+  }
 
   su <- symmetrical.uncertainty(C ~ ., df) %>%
     arrange(desc(attr_importance)) %>%
@@ -52,27 +54,35 @@ compute_rankings <- function(df) {
 
   mrmr <- df %>%
     select(-C) %>%
-    praznik::MRMR(df$C, positive = TRUE) %>%
+    praznik::MRMR(df$C, k = ncol(.), positive = TRUE) %>%
     as.data.frame() %>%
     arrange(desc(score)) %>%
     rownames()
 
-  # list(rba, su, jmim, mrmr)
-  list(su, jmim, mrmr)
+  list(rba, su, jmim, mrmr) %>%
+    discard(is.null)
 }
 
 compute_aggregation <- function(ranks, test_df, train_df, aggregator,
-                                threshold = 0.5) {
+                                thresholds) {
+  start_time <- Sys.time()
 
   # Rank aggregation
   global_rank <- aggregator(ranks)
 
-  threshold %>%
+  # Time execution
+  time <- Sys.time() - start_time
+
+  thresholds %>%
     map_dfr(function(threshold) {
       # Threshold selection
       selected <- global_rank %>%
         slice_head(prop = threshold) %>%
         pull(Name)
+
+      if (length(selected) == 0) {
+        return(tibble::tibble(threshold = threshold))
+      }
 
       train_df_red <- train_df %>%
         select(all_of(selected), "C")
@@ -86,24 +96,14 @@ compute_aggregation <- function(ranks, test_df, train_df, aggregator,
       c(conf_mat$overall, conf_mat$byClass) %>%
         t() %>%
         as_tibble() %>%
-        add_column(threshold = threshold)
-    })
+        add_column(threshold = threshold, n_variables = length(selected))
+    }) %>%
+    add_column(time = time)
 }
 
-# If it is a dataframe, add the columns, otherwise create new tibble
-add_column_or_new <- function(.data, ...) {
-  if (is.data.frame(.data)) {
-    tibble::add_column(.data, ...)
-  } else {
-    tibble::tibble(...)
-  }
-}
-
-process_df <- function(file, funcs, k = 10, timeout = 60, seed = 1234,
-                       threshold = 1:10 / 10) {
+process_df <- function(file, funcs, k = 10, seed = 1234,
+                       threshold = 1:10 / 20) {
   df <- read_df(file)
-
-  print(glue::glue("Processing: '{file}'..."))
 
   df %>%
     pull(C) %>%
@@ -119,15 +119,10 @@ process_df <- function(file, funcs, k = 10, timeout = 60, seed = 1234,
 
       funcs %>%
         imap_dfr(function(aggregator, name) {
-          withTimeout({
-              compute_aggregation(ranks, test_df, train_df, aggregator,
-                threshold = threshold
-              )
-            },
-            timeout = timeout,
-            onTimeout = "warning"
+          compute_aggregation(ranks, test_df, train_df, aggregator,
+            threshold = threshold
           ) %>%
-            add_column_or_new(
+            add_column(
               method = name,
               fold = fold_name
             )
@@ -137,17 +132,14 @@ process_df <- function(file, funcs, k = 10, timeout = 60, seed = 1234,
 }
 
 k <- 10
-dataset_folder <- "../datasets"
 seed <- 123456
 set.seed(seed)
 
-res <- dataset_folder %>%
-  list.files(full.names = TRUE, recursive = TRUE) %>%
-  keep(~ endsWith(., ".mat")) %T>% print() %>%
-  future_map_dfr(
-    ~ process_df(., k = k, timeout = timeout, seed = seed),
-    .options = furrr_options(seed = seed)
-  )
-
-res %>%
-  write_rds("resultat.rds")
+commandArgs(trailingOnly = TRUE) %T>%
+  print() %>%
+  map_dfr(function(file) {
+    gc()
+    message(paste("Processing", file))
+    process_df(file, funcs, k = k, seed = seed) %T>%
+      write_rds(paste0("resultat_", basename(file), ".rds"))
+  })
