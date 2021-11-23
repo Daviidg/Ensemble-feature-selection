@@ -3,6 +3,9 @@ library(FSelector)
 library(caret)
 library(tidyverse)
 library(e1071)
+library(furrr)
+
+plan(multisession)
 
 file <- "../datasets/low_dim/sonar.txt"
 df <- read.table(file, header = FALSE, sep = ",") %>%
@@ -65,7 +68,7 @@ compute_aggregation <- function(ranks, test_df, train_df, aggregator,
 }
 
 res <- folds %>%
-  imap(function(fold, fold_name) {
+  future_imap(function(fold, fold_name) {
     test_df <- df %>% slice(fold)
     train_df <- df %>% slice(-fold)
 
@@ -82,7 +85,7 @@ res <- folds %>%
           )
       }) %>%
       reduce(~ bind_rows(.x, .y))
-  }) %>%
+  }, .options = furrr_options(seed = 123)) %>%
   reduce(~ bind_rows(.x, .y))
 
 res %>%
