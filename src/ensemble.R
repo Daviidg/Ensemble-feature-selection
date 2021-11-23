@@ -12,16 +12,12 @@ df <- read.table(file, header = FALSE, sep = ",") %>%
   rename(C = last_col()) %>%
   mutate(C = as_factor(C))
 
-summary(df)
-
 set.seed(12456)
 k <- 10
 
 folds <- df %>%
   pull(C) %>%
   createFolds(k = k, list = TRUE)
-
-summary(df)
 
 method_names <- c("RRA", "geom.mean", "mean", "median", "min", "stuart")
 funcs <- method_names %>%
