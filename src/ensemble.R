@@ -73,7 +73,6 @@ res <- folds %>%
 
     funcs %>%
       imap(function(aggregator, name) {
-        print(c(fold_name, name))
         compute_aggregation(ranks, test_df, train_df, aggregator) %>%
           add_column(
             method = name,
