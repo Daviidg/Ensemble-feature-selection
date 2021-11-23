@@ -51,23 +51,27 @@ compute_aggregation <- function(ranks, test_df, train_df, aggregator,
   # Rank aggregation
   global_rank <- aggregator(ranks)
 
-  # Threshold selection
-  selected <- global_rank %>%
-    slice_head(prop = threshold) %>%
-    pull(Name)
+  threshold %>%
+    map_dfr(function(threshold) {
+      # Threshold selection
+      selected <- global_rank %>%
+        slice_head(prop = threshold) %>%
+        pull(Name)
 
-  train_df_red <- train_df %>%
-    select(all_of(selected), "C")
+      train_df_red <- train_df %>%
+        select(all_of(selected), "C")
 
-  # Train model with reduced dataset and test it
-  model <- e1071::naiveBayes(C ~ ., data = train_df_red)
-  y_pred <- predict(model, newdata = test_df)
+      # Train model with reduced dataset and test it
+      model <- e1071::naiveBayes(C ~ ., data = train_df_red)
+      y_pred <- predict(model, newdata = test_df)
 
-  conf_mat <- caret::confusionMatrix(table(y_pred, test_df$C))
+      conf_mat <- caret::confusionMatrix(table(y_pred, test_df$C))
 
-  c(conf_mat$overall, conf_mat$byClass) %>%
-    t() %>%
-    as_tibble()
+      c(conf_mat$overall, conf_mat$byClass) %>%
+        t() %>%
+        as_tibble() %>%
+        add_column(threshold = threshold)
+    })
 }
 
 # If it is a dataframe, add the columns, otherwise create new tibble
@@ -79,7 +83,8 @@ add_column_or_new <- function(.data, ...) {
   }
 }
 
-process_df <- function(file, k = 10, timeout = 60, seed = 1234) {
+process_df <- function(file, k = 10, timeout = 60, seed = 1234,
+                       threshold = 1:10 / 10) {
   df <- read_df(file)
 
   print(glue::glue("Processing: '{file}'..."))
@@ -87,7 +92,7 @@ process_df <- function(file, k = 10, timeout = 60, seed = 1234) {
   df %>%
     pull(C) %>%
     createFolds(k = k, list = TRUE) %>%
-    future_imap(function(fold, fold_name) {
+    future_imap_dfr(function(fold, fold_name) {
       test_df <- df %>%
         dplyr::slice(fold)
       train_df <- df %>%
@@ -97,9 +102,11 @@ process_df <- function(file, k = 10, timeout = 60, seed = 1234) {
       ranks <- compute_rankings(train_df)
 
       funcs %>%
-        imap(function(aggregator, name) {
+        imap_dfr(function(aggregator, name) {
           withTimeout({
-              compute_aggregation(ranks, test_df, train_df, aggregator)
+              compute_aggregation(ranks, test_df, train_df, aggregator,
+                threshold = threshold
+              )
             },
             timeout = timeout,
             onTimeout = "warning"
@@ -108,10 +115,8 @@ process_df <- function(file, k = 10, timeout = 60, seed = 1234) {
               method = name,
               fold = fold_name
             )
-        }) %>%
-        bind_rows()
+        })
     }, .options = furrr_options(seed = seed)) %>%
-    bind_rows() %>%
     add_column(dataset = file)
 }
 
@@ -121,9 +126,9 @@ seed <- 123456
 set.seed(seed)
 
 res <- dataset_folder %>%
-  list.files(full.names = TRUE, recursive = TRUE) %T>%
-  print() %>%
-  future_map(
+  list.files(full.names = TRUE, recursive = TRUE) %>%
+  keep(~ endsWith(., ".mat")) %T>% print() %>%
+  future_map_dfr(
     ~ process_df(., k = k, timeout = timeout, seed = seed),
     .options = furrr_options(seed = seed)
   )
