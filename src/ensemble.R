@@ -23,7 +23,7 @@ summary(df)
 method_names <- c("RRA", "geom.mean", "mean", "median", "min", "stuart")
 funcs <- method_names %>%
   map(~ function(ranks) {
-    aggregateRanks(ranks, method = .)
+    RobustRankAggreg::aggregateRanks(ranks, method = .)
   }) %>%
   set_names(method_names)
 
@@ -54,7 +54,7 @@ compute_aggregation <- function(ranks, test_df, train_df, aggregator,
     select(all_of(selected), "C")
 
   # Train model with reduced dataset and test it
-  model <- caret::naiveBayes(C ~ ., data = train_df_red)
+  model <- e1071::naiveBayes(C ~ ., data = train_df_red)
   y_pred <- predict(model, newdata = test_df)
 
   conf_mat <- caret::confusionMatrix(table(y_pred, test_df$C))
