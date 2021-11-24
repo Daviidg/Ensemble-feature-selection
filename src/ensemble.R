@@ -32,6 +32,12 @@ funcs <- method_names %>%
   }) %>%
   set_names(method_names)
 
+funcs[["GA"]] <- function(ranks) {
+  do.call("cbind", ranks) %>%
+    t() %>%
+    RankAggreg::RankAggreg(ncol(ranks), method = "GA")
+}
+
 compute_rankings <- function(df) {
   rba <- if (ncol(df) < 100) {
     relief(C ~ ., df, neighbours.count = 5, sample.size = 10) %>%
