@@ -54,7 +54,7 @@ compute_rankings <- function(df) {
 
   mrmr <- df %>%
     select(-C) %>%
-    praznik::MRMR(df$C, k = ncol(.), positive = TRUE) %>%
+    praznik::MRMR(df$C, k = ncol(.), positive = FALSE) %>%
     as.data.frame() %>%
     arrange(desc(score)) %>%
     rownames()
