@@ -1,3 +1,6 @@
+_libs
+.direnv
+
 *.rds
 *.pdf
 .pre-commit-config.yaml
