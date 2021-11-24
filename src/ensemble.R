@@ -25,13 +25,7 @@ read_df <- function(file) {
   }
 }
 
-method_names <- c("RRA", "geom.mean", "mean", "median", "min", "stuart")
-funcs <- method_names %>%
-  map(~ function(ranks) {
-    RobustRankAggreg::aggregateRanks(ranks, method = .)
-  }) %>%
-  set_names(method_names)
-
+funcs <- list()
 funcs[["GA"]] <- function(ranks) {
   do.call("cbind", ranks) %>%
     t() %>%
@@ -147,5 +141,5 @@ commandArgs(trailingOnly = TRUE) %T>%
     gc()
     message(paste("Processing", file))
     process_df(file, funcs, k = k, seed = seed) %T>%
-      write_rds(paste0("resultat_", basename(file), ".rds"))
+      write_rds(paste0("resultat_GA_", basename(file), ".rds"))
   })
