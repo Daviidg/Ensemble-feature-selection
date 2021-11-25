@@ -54,7 +54,7 @@ metrics_all_nofold <- bind_rows(metrics_nofold, metrics_simple_nofold)
 
 (accuracy_high_simple <- metrics_simple_nofold %>%
   filter(high_dim) %>%
-  ggplot(aes(threshold, Accuracy, color = metric)) +
+  ggplot(aes(threshold, Accuracy, color = method)) +
   facet_wrap(~dataset) +
   geom_line(linetype = "dashed") +
   labs(color = "Metric", x = "Threshold")
@@ -72,7 +72,7 @@ metrics_all_nofold <- bind_rows(metrics_nofold, metrics_simple_nofold)
 (accuracy_low_simple <- metrics_simple_nofold %>%
   filter(!high_dim) %>%
   filter(dataset != "iris.txt") %>%
-  ggplot(aes(threshold, Accuracy, color = metric)) +
+  ggplot(aes(threshold, Accuracy, color = method)) +
   facet_wrap(~dataset) +
   geom_line(linetype = "dashed") +
   labs(color = "Metric", x = "Threshold")
