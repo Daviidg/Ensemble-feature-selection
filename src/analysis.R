@@ -30,17 +30,22 @@ metrics_all_nofold <- bind_rows(metrics_nofold, metrics_simple_nofold)
 
 (accuracy_high_all <- metrics_all_nofold %>%
   filter(high_dim) %>%
+  mutate(Type = ifelse(ensemble, "Ensemble", "Filter")) %>%
   ggplot(aes(threshold, Accuracy, color = method)) +
   facet_wrap(~dataset) +
-  geom_line(aes(linetype = ensemble)) +
+  geom_line(aes(linetype = Type)) +
+  scale_linetype_manual(values = c("dotted", "solid")) +
   labs(color = "Method", x = "Threshold")
 )
 
 (accuracy_low_all <- metrics_all_nofold %>%
   filter(!high_dim) %>%
+  filter(dataset != "iris.txt") %>%
+  mutate(Type = ifelse(ensemble, "Ensemble", "Filter")) %>%
   ggplot(aes(threshold, Accuracy, color = method)) +
   facet_wrap(~dataset) +
-  geom_line(aes(linetype = ensemble)) +
+  geom_line(aes(linetype = Type)) +
+  scale_linetype_manual(values = c("dotted", "solid")) +
   labs(color = "Method", x = "Threshold")
 )
 
@@ -117,6 +122,12 @@ ggsave("plots/accuracy_low_simple.pdf", accuracy_low_simple,
 )
 ggsave("plots/accuracy_th_low.pdf", acc_th_low, width = 7, height = 4)
 ggsave("plots/accuracy_th_high.pdf", acc_th_high, width = 7, height = 4)
+ggsave("plots/accuracy_high_all.pdf", accuracy_high_all,
+  width = 8, height = 5
+)
+ggsave("plots/accuracy_low_all.pdf", accuracy_low_all,
+  width = 8, height = 5
+)
 
 metrics %>% filter(dataset == "colon.mat", )
 
@@ -136,14 +147,10 @@ decimalplaces <- function(x) {
 decimalplaces(0.13)
 
 siunitx <- function(acc, sd) {
-  if (is.na(acc) || is.na(sd)) {
-    return(NA)
-  }
-
   sd <- signif(sd, 2)
   dp <- decimalplaces(sd)
-  acc <- round(acc, dp)
   sd <- sd * 10^decimalplaces(sd)
+  acc <- format(acc, digits = 3, nsmall = dp, trim = TRUE)
   paste0(acc, "(", sd, ")")
 }
 
@@ -158,6 +165,40 @@ table <- metrics %>%
   select(-accuracy, -sd) %>%
   pivot_wider(names_from = "method", values_from = value)
 
+table_simple <- metrics_simple %>%
+  filter(dataset != "iris.txt") %>%
+  group_by(dataset, method, threshold) %>%
+  summarise(
+    accuracy = mean(Accuracy), sd = sd(Accuracy),
+    .groups = "drop"
+  ) %>%
+  mutate(value = siunitx(accuracy, sd)) %>%
+  select(-accuracy, -sd) %>%
+  pivot_wider(names_from = "method", values_from = value)
+
+table_time <- metrics %>%
+  filter(dataset != "iris.txt") %>%
+  group_by(dataset, method) %>%
+  summarise(
+    time = mean(time),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(names_from = "method", values_from = time)
+
+table_time
+sink("table_time.tex")
+table_time %>%
+  kable(
+    "latex",
+    caption = "Execution time",
+    booktabs = TRUE,
+    digits = 3
+  ) %>%
+  collapse_rows(1) %>%
+  add_header_above(c(" " = 1, "METHOD" = 8)) %>%
+  kable_styling(latex_options = c("HOLD_position", "scale_down"))
+sink()
+
 table
 
 sink("table.tex")
@@ -168,6 +209,21 @@ table %>%
     booktabs = TRUE,
     digits = 3
   ) %>%
+  collapse_rows(1) %>%
+  add_header_above(c(" " = 2, "METHOD" = 8)) %>%
+  kable_styling(latex_options = c("HOLD_position", "scale_down"))
+sink()
+
+sink("table_simple.tex")
+table_simple %>%
+  kable(
+    "latex",
+    caption = "Accuracies before ensemble",
+    booktabs = TRUE,
+    digits = 3
+  ) %>%
+  collapse_rows(1, latex_hline = "linespace") %>%
+  add_header_above(c(" " = 2, "METHOD" = 4)) %>%
   kable_styling(latex_options = c("HOLD_position", "scale_down"))
 sink()
 
