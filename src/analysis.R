@@ -28,8 +28,16 @@ metrics_all_nofold <- bind_rows(metrics_nofold, metrics_simple_nofold)
   )
 )
 
-(accuracy_high <- metrics_all_nofold %>%
+(accuracy_high_all <- metrics_all_nofold %>%
   filter(high_dim) %>%
+  ggplot(aes(threshold, Accuracy, color = method)) +
+  facet_wrap(~dataset) +
+  geom_line(aes(linetype = ensemble)) +
+  labs(color = "Method", x = "Threshold")
+)
+
+(accuracy_low_all <- metrics_all_nofold %>%
+  filter(!high_dim) %>%
   ggplot(aes(threshold, Accuracy, color = method)) +
   facet_wrap(~dataset) +
   geom_line(aes(linetype = ensemble)) +
